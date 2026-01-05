@@ -80,6 +80,8 @@ project_aegis/
 │   ├── envs/              # Trading environment (PPO)
 │   ├── features/          # Feature engineering
 │   └── consensus/         # Hard consensus logic
+|   └── config.yaml        # results of model and PPO agent    
+|
 ├── artifacts/
 │   ├── xgb/               # Trained XGBoost models
 │   ├── ppo/               # Trained PPO agents
@@ -143,6 +145,6 @@ These constraints keep results **interpretable and reproducible**.
 
 For research and educational use only
 
-
+all the results of models alone and with consensus are stored in config.yaml don't forget to check them out. :)
 
 Contributions are welcome. Please open a pull request for any suggestions or improvements.
