@@ -1,19 +1,22 @@
 import xgboost as xgb
 import pandas as pd
 import numpy as np
-from sklearn.metrics import accuracy_score, roc_auc_score
 
 class XGBDirectionalModel:
     def __init__(self):
+        # Increased regularization and constrained depth to prevent extreme overfitting
         self.model = xgb.XGBClassifier(
-            n_estimators=300,
-            max_depth=4,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.8,
+            n_estimators=500,
+            max_depth=3,
+            learning_rate=0.01,
+            subsample=0.7,
+            colsample_bytree=0.7,
+            reg_alpha=0.5,
+            reg_lambda=1.5,
             objective="binary:logistic",
             eval_metric="logloss",
-            random_state=42
+            random_state=42,
+            early_stopping_rounds=50
         )
 
     def train(self, X_train, y_train, X_val, y_val):

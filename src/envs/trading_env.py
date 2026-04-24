@@ -5,8 +5,8 @@ from gym import spaces
 
 class TradingEnv(gym.Env):
     """
-    Trading environment for PPO.
-    Compatible with training AND offline inference.
+    Trading environment for PPO (Meta-Policy).
+    Uses precomputed XGBoost probabilities and current position as part of observation.
     """
 
     metadata = {"render.modes": ["human"]}
@@ -26,7 +26,11 @@ class TradingEnv(gym.Env):
             "trend_sma"
         ]
 
-        self.n_features = len(self.feature_cols)
+        if "xgb_prob" not in self.data.columns:
+            raise ValueError("Data must contain 'xgb_prob' column for Meta-Policy")
+
+        # Observation: [Features...] + [xgb_prob] + [position]
+        self.n_features = len(self.feature_cols) + 2
 
         # ===============================
         # ACTION & OBSERVATION SPACES
@@ -45,28 +49,34 @@ class TradingEnv(gym.Env):
         self.reset()
 
     # ==================================================
-    # TRAINING OBSERVATION (USED BY PPO INTERNALLY)
+    # TRAINING OBSERVATION
     # ==================================================
     def _get_obs(self):
-        obs = self.data.loc[self.current_step, self.feature_cols].values
-        return obs.astype(np.float32)
+        obs = self.data.loc[self.current_step, self.feature_cols].values.tolist()
+        xgb_prob = self.data.loc[self.current_step, "xgb_prob"]
+        obs.append(xgb_prob)
+        obs.append(self.position)
+        return np.array(obs, dtype=np.float32)
 
     # ==================================================
     # INFERENCE OBSERVATION (USED BY HARD CONSENSUS)
     # ==================================================
-    def get_observation(self, idx: int):
+    def get_observation(self, idx: int, current_position: int, xgb_prob: float):
       """
        Deterministic, numerically safe observation for inference."""
    
-      obs = self.data.loc[idx, self.feature_cols].values.astype(np.float32)
+      obs = self.data.loc[idx, self.feature_cols].values.tolist()
+      obs.append(xgb_prob)
+      obs.append(current_position)
+      obs_arr = np.array(obs, dtype=np.float32)
 
     # Replace NaN / Inf
-      obs = np.nan_to_num(obs, nan=0.0, posinf=10.0, neginf=-10.0)
+      obs_arr = np.nan_to_num(obs_arr, nan=0.0, posinf=10.0, neginf=-10.0)
 
     # Clip to training bounds
-      obs = np.clip(obs, -10.0, 10.0)
+      obs_arr = np.clip(obs_arr, -10.0, 10.0)
 
-      return obs
+      return obs_arr
 
 
     def reset(self, seed=None, options=None):
@@ -91,10 +101,14 @@ class TradingEnv(gym.Env):
         # REWARD DELAY (NO LOOK-AHEAD)
         # Observation at t -> Action at t -> earns return at t+1
         # --------------------------------------------------
-        # Note: current_step is where observation was taken.
-        # we need the return of the NEXT candle.
         next_ret = self.data.loc[self.current_step + 1, "ret_1d"]
-        reward = (self.position * next_ret) - costs
+        
+        # Meta-Policy Reward: Penalize excessive switching and optimize for Sharpe-like behavior
+        step_pnl = (self.position * next_ret) - costs
+        
+        # We give a slight penalty for being in cash to encourage finding good trades, 
+        # or we could just use step_pnl. Let's use pure step_pnl.
+        reward = step_pnl
 
         self.current_step += 1
         done = self.current_step >= len(self.data) - 2 # buffer for t+1 return
